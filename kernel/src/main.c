@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <limine.h>
+#include "kprintf.h"
 
 // Set the base revision to 6, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -71,6 +72,19 @@ void kmain(void) {
             fb_ptr[y * (framebuffer->pitch / 4) + x] = (nY << 8) | nX;
         }
     }
+
+    
+    //testing serial alone
+    //serial_init();
+    //serial_write_string("hello from kernel\n");
+    
+    //testing kprintf
+    kprintf("hello\n");
+    kprintf("str=%s char=%c\n", "test", 'A');
+    kprintf("dec=%d hex=%x\n", 255, 255);
+    kprintf("neg=%d\n", -42);
+    kprintf("zero=%d zerohex=%x literal%%\n", 0, 0);
+
 
     // We're done, just hang...
     hcf();
