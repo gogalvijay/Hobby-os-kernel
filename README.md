@@ -1,44 +1,32 @@
-# Limine C Template
+# Hobby OS Kernel
 
-This repository will demonstrate how to set up a basic kernel in C using Limine.
+A 64-bit hobby operating system kernel, built from scratch on top of the [Limine bootloader](https://github.com/limine-bootloader/limine), using MIT 6.828 (2018) labs 2-6 as a conceptual design reference (not literal JOS — this is a fresh 64-bit kernel built my own way).
 
-## How to use this?
+Just building an OS kernel because I'm bored.
 
-### Dependencies
+## Roadmap
 
-Any `make` command depends on GNU make (`gmake`) and is expected to be run using it. This usually means using `make` on most GNU/Linux distros, or `gmake` on other non-GNU systems.
+Following a structured ~90-day roadmap, organized into phases:
 
-It is recommended to build this project using a standard UNIX-like system, using a Clang/LLVM toolchain capable of cross compilation.
+- **Phase 0** — Toolchain, Limine hello world, GDT/IDT
+- **Phase 1** — Physical & virtual memory management
+- **Phase 2** — Kernel heap, ELF loading, user mode, syscalls
+- **Phase 3** — Multiple processes, scheduling, fork(), IPC
+- **Phase 4** — Storage, filesystem, spawn, shell
+- **Phase 5** — Networking (stretch goal)
 
-Additionally, building an ISO with `make all` requires `xorriso`, and building a HDD/USB image with `make all-hdd` requires `sgdisk` (usually from `gdisk` or `gptfdisk` packages) and `mtools`.
 
-### Toolchain selection
+## Build & run
 
-The `TOOLCHAIN` and `TOOLCHAIN_PREFIX` `make` variables can be used to set the toolchain. `TOOLCHAIN` can be set to `llvm` to use Clang/LLVM.
+This repo is built on the [limine-c-template](https://github.com/limine-bootloader/limine-c-template) — see that project for full build dependency details (`xorriso`, `sgdisk`, `mtools`, a cross-capable Clang/LLVM or GCC toolchain).
 
-For example:
 ```
-make TOOLCHAIN=llvm
-```
-or:
-```
-make TOOLCHAIN_PREFIX=x86_64-elf-
+./kernel/get-deps
+make run
 ```
 
-### Architectural targets
+Boots via OVMF/QEMU with serial output routed to stdout for kernel-level debug logging.
 
-The `ARCH` make variable determines the target architecture to build the kernel and image for.
+## Why
 
-The default `ARCH` is `x86_64`. Other options include: `aarch64`, `loongarch64`, and `riscv64`.
-
-### Makefile targets
-
-Running `make all` will compile the kernel (from the `kernel/` directory) and then generate a bootable ISO image.
-
-Running `make all-hdd` will compile the kernel and then generate a raw image suitable to be flashed onto a USB stick or hard drive/SSD.
-
-Running `make run` will build the kernel and a bootable ISO (equivalent to make all) and then run it using `qemu` (if installed).
-
-Running `make run-hdd` will build the kernel and a raw HDD image (equivalent to make all-hdd) and then run it using `qemu` (if installed).
-
-For x86_64, the `run-bios` and `run-hdd-bios` targets are equivalent to their non `-bios` counterparts except that they boot `qemu` using the default SeaBIOS firmware instead of OVMF.
+Learning OS internals hands-on: bootloaders, paging, interrupts, processes, filesystems, and networking, by building each piece myself instead of just reading about it.
