@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <limine.h>
 #include "kprintf.h"
+#include "gdt.h"
+
 
 // Set the base revision to 6, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -74,6 +76,8 @@ void kmain(void) {
     }
 
     
+
+    //day-4 
     //testing serial alone
     //serial_init();
     //serial_write_string("hello from kernel\n");
@@ -85,6 +89,9 @@ void kmain(void) {
     kprintf("neg=%d\n", -42);
     kprintf("zero=%d zerohex=%x literal%%\n", 0, 0);
 
+
+    //day 5
+    gdt_dump();
 
     // We're done, just hang...
     hcf();
