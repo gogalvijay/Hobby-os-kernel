@@ -44,6 +44,7 @@ static void kprintf_puthex(uint64_t value) {
     serial_write_string(s);
 }
 
+
 void kprintf(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -54,7 +55,14 @@ void kprintf(const char *fmt, ...) {
             continue;
         }
 
-        p++; 
+        p++;
+
+        int is_long = 0;
+        if (*p == 'l') {
+            is_long = 1;
+            p++;
+        }
+
         switch (*p) {
             case 's': {
                 const char *s = va_arg(args, const char *);
@@ -67,12 +75,12 @@ void kprintf(const char *fmt, ...) {
                 break;
             }
             case 'd': {
-                int val = va_arg(args, int);
+                int64_t val = is_long ? va_arg(args, int64_t) : va_arg(args, int);
                 kprintf_putint(val);
                 break;
             }
             case 'x': {
-                unsigned int val = va_arg(args, unsigned int);
+                uint64_t val = is_long ? va_arg(args, uint64_t) : va_arg(args, unsigned int);
                 kprintf_puthex(val);
                 break;
             }

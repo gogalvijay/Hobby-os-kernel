@@ -4,7 +4,7 @@
 #include <limine.h>
 #include "kprintf.h"
 #include "gdt.h"
-
+#include "idt.h"
 
 // Set the base revision to 6, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -92,6 +92,14 @@ void kmain(void) {
 
     //day 5
     gdt_dump();
+
+    //day-6
+    idt_init();
+    idt_dump();
+
+    //day-8 test
+     volatile int *bad_ptr = (volatile int *)0x0;
+    *bad_ptr = 42;
 
     // We're done, just hang...
     hcf();
