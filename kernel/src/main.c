@@ -24,6 +24,13 @@ static volatile struct limine_framebuffer_request framebuffer_request = {
     .revision = 0
 };
 
+__attribute__((used,section(".limine_requests")))
+static volatile struct limine_memmap_request memmap_request = {
+	.id = LIMINE_MEMMAP_REQUEST_ID,
+	.revision=0
+};
+
+
 // Finally, define the start and end markers for the Limine requests.
 // These can also be moved anywhere, to any .c file, as seen fit.
 
@@ -49,6 +56,22 @@ static void hcf(void) {
 // The following will be our kernel's entry point.
 // If renaming kmain() to something else, make sure to change the
 // linker script accordingly.
+
+static const char *memmap_type_str(uint64_t type) {
+    switch (type) {
+        case 0: return "USABLE";
+        case 1: return "RESERVED";
+        case 2: return "ACPI_RECLAIMABLE";
+        case 3: return "ACPI_NVS";
+        case 4: return "BAD_MEMORY";
+        case 5: return "BOOTLOADER_RECLAIMABLE";
+        case 6: return "KERNEL_AND_MODULES";
+        case 7: return "FRAMEBUFFER";
+        case 8: return "EFI_RECLAIMABLE";
+        default: return "UNKNOWN";
+    }
+}
+
 void kmain(void) {
     // Ensure the bootloader actually understands our base revision (see spec).
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false) {
@@ -98,8 +121,19 @@ void kmain(void) {
     idt_dump();
 
     //day-8 test
-     volatile int *bad_ptr = (volatile int *)0x0;
-    *bad_ptr = 42;
+    //volatile int *bad_ptr = (volatile int *)0x0;
+    //*bad_ptr = 42;
+
+    //day-9 
+    if(memmap_request.response != NULL){
+	size_t cnt=memmap_request.response->entry_count;
+	for(size_t i = 0;i<cnt;i++){
+		struct limine_memmap_entry *memmap_entry = memmap_request.response->entries[i];
+		kprintf("region=%ld base=%lx length=%lx type=%d type=%s  \n",(int64_t)i, memmap_entry->base, memmap_entry->length, memmap_entry->type,  memmap_type_str(memmap_entry->type));
+
+	}
+
+    }
 
     // We're done, just hang...
     hcf();
