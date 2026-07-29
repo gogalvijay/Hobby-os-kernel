@@ -85,3 +85,13 @@ void pmm_dump(void) {
                 memmap_type_str(entry->type));
     }
 }
+
+
+size_t pmm_boot_alloc_region(void) {
+    return current_region;
+}
+
+uint64_t pmm_boot_alloc_next_free(void) {
+    return next_free;
+}
+

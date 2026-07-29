@@ -6,6 +6,8 @@
 #include "gdt.h"
 #include "idt.h"
 #include "physical_page_management.h"
+#include "hhdm.h"
+#include "page_alloc.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -19,6 +21,12 @@ static volatile struct limine_framebuffer_request framebuffer_request = {
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_memmap_request memmap_request = {
     .id = LIMINE_MEMMAP_REQUEST_ID,
+    .revision = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_hhdm_request hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST_ID,
     .revision = 0
 };
 
@@ -72,6 +80,11 @@ void kmain(void) {
     idt_init();
     idt_dump();
 
+    if (hhdm_request.response != NULL) {
+        hhdm_init(hhdm_request.response->offset);
+        kprintf("hhdm offset=%lx\n", g_hhdm_offset);
+    }
+
     if (memmap_request.response != NULL) {
         pmm_init(memmap_request.response);
         pmm_dump();
@@ -85,6 +98,35 @@ void kmain(void) {
         kprintf("boot_alloc p2=%lx\n", (uint64_t)p2);
         kprintf("boot_alloc p3=%lx\n", (uint64_t)p3);
     	kprintf("boot_alloc p4=%lx\n", (uint64_t)p4);
+    	
+	frame_alloc_init(memmap_request.response);
+	kprintf("free before=%ld\n", (int64_t)count_free());
+
+	//struct PageInfo *pp = page_alloc(0);
+	//kprintf("alloc pa=%lx\n", page2pa(pp));
+	//kprintf("free after alloc=%ld\n", (int64_t)count_free());
+
+	//pp->pp_ref = 0;
+	//page_free(pp);
+	//kprintf("free after free=%ld\n", (int64_t)count_free());
+    
+	struct PageInfo *pp1 = page_alloc(0);
+	struct PageInfo *pp2 = page_alloc(0);
+	struct PageInfo *pp3 = page_alloc(0);
+
+	kprintf("alloc pa1=%lx\n", page2pa(pp1));
+	kprintf("alloc pa2=%lx\n", page2pa(pp2));
+	kprintf("alloc pa3=%lx\n", page2pa(pp3));
+	kprintf("free after 3 allocs=%ld\n", (int64_t)count_free());
+
+	pp1->pp_ref = 0;
+	pp2->pp_ref = 0;
+	pp3->pp_ref = 0;
+	page_free(pp1);
+	page_free(pp2);
+	page_free(pp3);
+
+	kprintf("free after 3 frees=%ld\n", (int64_t)count_free());
     }
 
     hcf();
