@@ -8,6 +8,8 @@
 #include "physical_page_management.h"
 #include "hhdm.h"
 #include "page_alloc.h"
+#include "paging.h"
+
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -127,6 +129,65 @@ void kmain(void) {
 	page_free(pp3);
 
 	kprintf("free after 3 frees=%ld\n", (int64_t)count_free());
+
+
+	 
+	//day-16 test
+        uint64_t test_vaddr = 0xFFFF800000001000ULL;
+
+        kprintf("pml4_index=%x\n", pml4_index(test_vaddr));
+        kprintf("pdpt_index=%x\n", pdpt_index(test_vaddr));
+        kprintf("pd_index=%x\n", pd_index(test_vaddr));
+        kprintf("pt_index=%x\n", pt_index(test_vaddr));
+        kprintf("is_canonical=%d\n", is_canonical(test_vaddr));
+
+        uint64_t test_phys = 0x1234000ULL;
+        uint64_t flags = 0x3;
+        page_table_entry pte = pte_make(test_phys, flags);
+        kprintf("pte=%lx\n", pte);
+        kprintf("pte_get_addr=%lx\n", pte_get_addr(pte));
+        kprintf("present=%d writable=%d\n", present(pte), writable(pte));
+
+    
+        //day17-19 tests
+    	{	
+        page_table_t *pml4 = get_current_pml4();
+        kprintf("pml4=%lx\n", (uint64_t)pml4);
+
+        uint64_t test_vaddr = 0x2000000ULL;
+
+        struct PageInfo *pp = page_alloc(1);
+        uint64_t test_phys = page2pa(pp);
+        kprintf("test_phys=%lx\n", test_phys);
+
+        uint64_t flags = 0;
+        flags = flags | (1ULL << 0);
+        flags = flags | (1ULL << 1);
+
+        vmm_map(pml4, test_vaddr, test_phys, flags);
+
+        page_table_entry *pte_before = vmm_walk(pml4, test_vaddr, false);
+        if (pte_before == NULL) {
+            kprintf("map failed: walk returned NULL\n");
+        } else {
+            kprintf("mapped entry=%lx\n", *pte_before);
+            kprintf("mapped addr=%lx\n", pte_get_addr(*pte_before));
+            kprintf("mapped present=%d writable=%d\n", present(*pte_before), writable(*pte_before));
+        }
+
+        vmm_unmap(pml4, test_vaddr);
+
+        page_table_entry *pte_after = vmm_walk(pml4, test_vaddr, false);
+        if (pte_after == NULL) {
+            kprintf("after unmap: walk returned NULL\n");
+        } else {
+            kprintf("after unmap: entry=%lx present=%d\n", *pte_after, present(*pte_after));
+        }
+    	
+    	}
+    
+    
+    
     }
 
     hcf();
