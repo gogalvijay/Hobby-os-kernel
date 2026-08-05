@@ -9,7 +9,7 @@
 #include "hhdm.h"
 #include "page_alloc.h"
 #include "paging.h"
-
+#include "stress_test.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -186,7 +186,8 @@ void kmain(void) {
     	
     	}
     
-    
+	//day-23
+        phase1_stress_test();
     
     }
 
