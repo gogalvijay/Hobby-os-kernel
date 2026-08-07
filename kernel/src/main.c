@@ -10,6 +10,7 @@
 #include "page_alloc.h"
 #include "paging.h"
 #include "stress_test.h"
+#include "kheap.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -187,7 +188,17 @@ void kmain(void) {
     	}
     
 	//day-23
-        phase1_stress_test();
+        //phase1_stress_test();
+	//
+	{
+		kheap_init();
+		void *a = kmalloc(32);
+		void *b = kmalloc(4096);
+		kprintf("kmalloc a=%lx b=%lx\n", (uint64_t)a, (uint64_t)b);
+		kfree(a);
+		void *c = kmalloc(16);
+		kprintf("kmalloc c=%lx\n", (uint64_t)c);
+	}
     
     }
 
