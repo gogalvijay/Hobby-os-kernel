@@ -11,6 +11,7 @@
 #include "paging.h"
 #include "stress_test.h"
 #include "kheap.h"
+#include "elf.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -33,11 +34,20 @@ static volatile struct limine_hhdm_request hhdm_request = {
     .revision = 0
 };
 
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_module_request module_request = {
+    .id = LIMINE_MODULE_REQUEST_ID,
+    .revision = 0
+};
+
 __attribute__((used, section(".limine_requests_start")))
 static volatile uint64_t limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;
 
 __attribute__((used, section(".limine_requests_end")))
 static volatile uint64_t limine_requests_end_marker[] = LIMINE_REQUESTS_END_MARKER;
+
+
+
 
 static void hcf(void) {
     for (;;) {
@@ -198,6 +208,22 @@ void kmain(void) {
 		kfree(a);
 		void *c = kmalloc(16);
 		kprintf("kmalloc c=%lx\n", (uint64_t)c);
+	}
+
+	{
+		if (module_request.response != NULL && module_request.response->module_count > 0) {
+    			struct limine_file *mod = module_request.response->modules[0];
+    			uint64_t entry;
+    			if (elf_load(get_current_pml4(), mod->address, &entry)) {
+        			kprintf("elf_load ok, entry=%lx\n", entry);
+    			} 
+			else {
+        			kprintf("elf_load failed\n");
+    			}
+		} 
+		else {
+    				kprintf("no module found\n");
+		}
 	}
     
     }
