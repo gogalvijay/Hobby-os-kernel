@@ -8,6 +8,7 @@
 #include "page_alloc.h"
 
 #define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
+#define KERNEL_PML4_START 256   // indices 256-511 = higher half = kernel space
 
 bool present(page_table_entry pte){
 	return pte&1;
@@ -246,6 +247,29 @@ void vmm_unmap(page_table_t *pml4, uint64_t vaddr){
 	}
 	*pte = 0;
 	invlpg(vaddr);
+}
+
+page_table_t *vmm_new_address_space(void){
+	//day 28 allocate new page table for process and copy and switch cr3
+	struct PageInfo *pp = page_alloc(1); 
+	if (pp == NULL) {
+		return NULL;
+	}
+
+	page_table_t *new_pml4 = (page_table_t *)phys_to_virt(page2pa(pp));
+	page_table_t *kernel_pml4 = get_current_pml4();
+
+	for (int i = KERNEL_PML4_START; i < 512; i++) {
+		new_pml4->entries[i] = kernel_pml4->entries[i];
+	}
+
+	return new_pml4;
+}
+
+void vmm_switch_address_space(page_table_t *pml4){
+	//swith cr3 for ay28
+	uint64_t phys = virt_to_phys((void *)pml4);
+	__asm__ volatile ("mov %0, %%cr3" :: "r"(phys) : "memory");
 }
 
 

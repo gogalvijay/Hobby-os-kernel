@@ -12,6 +12,7 @@
 #include "stress_test.h"
 #include "kheap.h"
 #include "elf.h"
+#include "task.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -224,6 +225,38 @@ void kmain(void) {
 		else {
     				kprintf("no module found\n");
 		}
+	}
+
+	{
+
+		//day-28
+		page_table_t *original_pml4 = get_current_pml4();
+
+		struct task *t = task_create();
+		if (t == NULL) {
+			kprintf("task_create failed\n");
+		} else {
+			kprintf("task_id=%ld new_pml4=%lx\n", (int64_t)t->task_id, (uint64_t)t->pml4);
+
+			uint64_t test_vaddr2 = 0x400000ULL;
+			struct PageInfo *pp = page_alloc(1);
+			uint64_t test_phys2 = page2pa(pp);
+			uint64_t flags2 = 0x3; 
+
+			vmm_map(t->pml4, test_vaddr2, test_phys2, flags2);
+
+			vmm_switch_address_space(t->pml4);
+
+			kprintf("still alive after switch -- kernel mapping survived\n");
+
+			*(volatile uint32_t *)test_vaddr2 = 0xDEADBEEF;
+			uint32_t readback = *(volatile uint32_t *)test_vaddr2;
+			kprintf("test page readback=%x (expect deadbeef)\n", readback);
+
+			vmm_switch_address_space(original_pml4);
+			kprintf("switched back to original pml4\n");
+		}
+
 	}
     
     }
