@@ -17,6 +17,44 @@ struct gdt_entry {
     uint8_t  base_high;
 } __attribute__((packed));
 
+//osdevwiki refer
+struct tss_entry {
+    uint16_t limit_low;
+    uint16_t base_low;
+    uint8_t  base_mid;
+    uint8_t  access;
+    uint8_t  granularity;
+    uint8_t  base_high;
+    uint32_t base_upper;   
+    uint32_t reserved;
+} __attribute__((packed));
+
+struct tss {
+    uint32_t reserved0;
+    uint64_t rsp0;
+    uint64_t rsp1;
+    uint64_t rsp2;
+    uint64_t reserved1;
+    uint64_t ist1;
+    uint64_t ist2;
+    uint64_t ist3;
+    uint64_t ist4;
+    uint64_t ist5;
+    uint64_t ist6;
+    uint64_t ist7;
+    uint64_t reserved2;
+    uint16_t reserved3;
+    uint16_t iopb_offset;
+} __attribute__((packed));
+
+#define GDT_KCODE_SEL   0x08
+#define GDT_KDATA_SEL   0x10
+#define GDT_UDATA_SEL   0x1B   
+#define GDT_UCODE_SEL   0x23   
+#define GDT_TSS_SEL     0x28
+
+void gdt_init(void);
 void gdt_dump(void);
+void tss_set_rsp0(uint64_t rsp0);
 
 #endif

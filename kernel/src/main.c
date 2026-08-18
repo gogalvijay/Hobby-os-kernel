@@ -89,6 +89,7 @@ void kmain(void) {
     kprintf("neg=%d\n", -42);
     kprintf("zero=%d zerohex=%x literal%%\n", 0, 0);
 
+    gdt_init();
     gdt_dump();
 
     idt_init();
@@ -257,6 +258,12 @@ void kmain(void) {
 			kprintf("switched back to original pml4\n");
 		}
 
+	}
+
+	{
+		uint16_t tr;
+		__asm__ volatile ("str %0" : "=r"(tr));
+		kprintf("TR=%x (expect 28)\n", tr);
 	}
     
     }
