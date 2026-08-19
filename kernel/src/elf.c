@@ -35,23 +35,45 @@ int elf_load(page_table_t *pml4, const void *elf_image, uint64_t *entry_out) {
         uint64_t vstart = rounddown(seg->p_vaddr, PGSIZE);
         uint64_t vend   = roundup(seg->p_vaddr + seg->p_memsz, PGSIZE);
 
-        uint64_t flags = (1ULL << 0) | (1ULL << 1); 
+        // present + writable + user-accessible: this is ring-3 code/data,
+        // without bit 2 here the user program page-faults the instant it touches its own segment
+        uint64_t flags = (1ULL << 0) | (1ULL << 1) | (1ULL << 2);
+
+        uint64_t file_start = seg->p_vaddr;
+        uint64_t file_end   = seg->p_vaddr + seg->p_filesz; 
 
         for (uint64_t va = vstart; va < vend; va += PGSIZE) {
             page_table_entry *existing = vmm_walk(pml4, va, false);
+            uint64_t phys;
+
             if (existing == NULL || !present(*existing)) {
-                struct PageInfo *pp = page_alloc(1);
+                struct PageInfo *pp = page_alloc(1);  //need to check
                 if (pp == NULL) {
                     kprintf("elf_load: out of memory\n");
                     return 0;
                 }
-                vmm_map(pml4, va, page2pa(pp), flags);
+                phys = page2pa(pp);
+                vmm_map(pml4, va, phys, flags);
+            } else {
+                phys = pte_get_addr(*existing);
             }
-        }
 
-        const uint8_t *src = base + seg->p_offset;
-        uint8_t *dst = (uint8_t *)seg->p_vaddr; 
-        memcpy(dst, src, seg->p_filesz);
+            uint8_t *page_hhdm = (uint8_t *)phys_to_virt(phys);
+
+            uint64_t page_start = va;
+            uint64_t page_end   = va + PGSIZE;
+
+            uint64_t copy_lo = file_start > page_start ? file_start : page_start;
+            uint64_t copy_hi = file_end   < page_end   ? file_end   : page_end;
+
+            if (copy_lo < copy_hi) {
+                uint64_t len = copy_hi - copy_lo;
+                const uint8_t *src = base + seg->p_offset + (copy_lo - seg->p_vaddr);
+                uint8_t *dst = page_hhdm + (copy_lo - page_start);
+                memcpy(dst, src, len);
+            }
+
+        }
     }
 
     *entry_out = eh->e_entry;

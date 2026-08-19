@@ -175,6 +175,7 @@ page_table_entry *vmm_walk(page_table_t *pml4, uint64_t vaddr, bool create){
 		uint64_t flags = 0;
 		flags = flags | (1ULL << 0);
 		flags = flags | (1ULL << 1);
+		flags = flags | (1ULL << 2); // user-accessible: needed so ring-3 can walk through this table
 		pml4->entries[idx4] = pte_make(new_phys, flags);
 	}
 
@@ -194,6 +195,7 @@ page_table_entry *vmm_walk(page_table_t *pml4, uint64_t vaddr, bool create){
 		uint64_t flags = 0;
 		flags = flags | (1ULL << 0);
 		flags = flags | (1ULL << 1);
+		flags = flags | (1ULL << 2);
 		pdpt->entries[idx3] = pte_make(new_phys, flags);
 	}
 
@@ -213,6 +215,7 @@ page_table_entry *vmm_walk(page_table_t *pml4, uint64_t vaddr, bool create){
 		uint64_t flags = 0;
 		flags = flags | (1ULL << 0);
 		flags = flags | (1ULL << 1);
+		flags = flags | (1ULL << 2);
 		pd->entries[idx2] = pte_make(new_phys, flags);
 	}
 

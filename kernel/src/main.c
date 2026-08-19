@@ -13,6 +13,10 @@
 #include "kheap.h"
 #include "elf.h"
 #include "task.h"
+#include "usermode.h"
+
+#define PGSIZE 4096
+#define USER_STACK_TOP 0x0000000006000000ULL  // arbitrary, well clear of typical ELF load addresses
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -117,14 +121,6 @@ void kmain(void) {
 	frame_alloc_init(memmap_request.response);
 	kprintf("free before=%ld\n", (int64_t)count_free());
 
-	//struct PageInfo *pp = page_alloc(0);
-	//kprintf("alloc pa=%lx\n", page2pa(pp));
-	//kprintf("free after alloc=%ld\n", (int64_t)count_free());
-
-	//pp->pp_ref = 0;
-	//page_free(pp);
-	//kprintf("free after free=%ld\n", (int64_t)count_free());
-    
 	struct PageInfo *pp1 = page_alloc(0);
 	struct PageInfo *pp2 = page_alloc(0);
 	struct PageInfo *pp3 = page_alloc(0);
@@ -213,24 +209,7 @@ void kmain(void) {
 	}
 
 	{
-		if (module_request.response != NULL && module_request.response->module_count > 0) {
-    			struct limine_file *mod = module_request.response->modules[0];
-    			uint64_t entry;
-    			if (elf_load(get_current_pml4(), mod->address, &entry)) {
-        			kprintf("elf_load ok, entry=%lx\n", entry);
-    			} 
-			else {
-        			kprintf("elf_load failed\n");
-    			}
-		} 
-		else {
-    				kprintf("no module found\n");
-		}
-	}
-
-	{
-
-		//day-28
+		// day 31-32 create a task,load the ELF module INTO ITS OWN address space give it a user stack, and drop into ring 3.
 		page_table_t *original_pml4 = get_current_pml4();
 
 		struct task *t = task_create();
@@ -239,25 +218,38 @@ void kmain(void) {
 		} else {
 			kprintf("task_id=%ld new_pml4=%lx\n", (int64_t)t->task_id, (uint64_t)t->pml4);
 
-			uint64_t test_vaddr2 = 0x400000ULL;
-			struct PageInfo *pp = page_alloc(1);
-			uint64_t test_phys2 = page2pa(pp);
-			uint64_t flags2 = 0x3; 
+			if (module_request.response == NULL || module_request.response->module_count == 0) {
+				kprintf("no module found for user program\n");
+			} else {
+				struct limine_file *mod = module_request.response->modules[1];
+				uint64_t entry = 0;
 
-			vmm_map(t->pml4, test_vaddr2, test_phys2, flags2);
+				if (!elf_load(t->pml4, mod->address, &entry)) {
+					kprintf("elf_load into task pml4 failed\n");
+				} else {
+					kprintf("elf_load ok, entry=%lx\n", entry);
 
-			vmm_switch_address_space(t->pml4);
+					struct PageInfo *stack_pp = page_alloc(1);
+					if (stack_pp == NULL) {
+						kprintf("failed to allocate user stack page\n");
+					} else {
+						uint64_t stack_phys = page2pa(stack_pp);
+						uint64_t stack_flags = (1ULL << 0) | (1ULL << 1) | (1ULL << 2);
 
-			kprintf("still alive after switch -- kernel mapping survived\n");
+						vmm_map(t->pml4, USER_STACK_TOP - PGSIZE, stack_phys, stack_flags);
 
-			*(volatile uint32_t *)test_vaddr2 = 0xDEADBEEF;
-			uint32_t readback = *(volatile uint32_t *)test_vaddr2;
-			kprintf("test page readback=%x (expect deadbeef)\n", readback);
+						kprintf("entering ring 3 at entry=%lx stack=%lx\n",
+							entry, (uint64_t)USER_STACK_TOP);
 
-			vmm_switch_address_space(original_pml4);
-			kprintf("switched back to original pml4\n");
+						vmm_switch_address_space(t->pml4);
+						enter_usermode(entry, USER_STACK_TOP);
+
+					}
+				}
+			}
 		}
 
+		(void)original_pml4;
 	}
 
 	{
