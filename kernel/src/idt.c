@@ -2,7 +2,7 @@
 #include "kprintf.h"
 
 #define IDT_ENTRIES 256
-
+#define SYSCALL_VECTOR_LOCAL 0x80
 static struct idt_entry idt[IDT_ENTRIES];
 static struct idtr idtr;
 
@@ -13,6 +13,8 @@ struct interrupt_frame {
     uint64_t sp;
     uint64_t ss;
 };
+
+extern void syscall_entry_asm(void);
 
 static const char *exception_name(uint8_t vector) {
     static const char *names[32] = {
@@ -95,7 +97,11 @@ void idt_set_gate(uint8_t vector, uint64_t handler, uint16_t selector, uint8_t t
 }
 
 // #define KERNEL_CS 0x08          
-#define IDT_INTERRUPT_GATE 0x8E 
+#define IDT_INTERRUPT_GATE 0x8E
+// same as above but DPL=3 instead of DPL=0 -- this is the one gate ring-3 code
+// is allowed to `int` into. Every other gate stays DPL=0, so user code still
+// can't deliberately invoke e.g. the page-fault vector directly.
+#define IDT_INTERRUPT_GATE_USER 0xEE
 
 static inline uint16_t get_cs(void) {
     uint16_t cs;
@@ -141,6 +147,8 @@ void idt_init(void) {
     idt_set_gate(30, (uint64_t)isr30, KERNEL_CS, IDT_INTERRUPT_GATE);
     idt_set_gate(31, (uint64_t)isr31, KERNEL_CS, IDT_INTERRUPT_GATE);
 
+    idt_set_gate(SYSCALL_VECTOR_LOCAL, (uint64_t)syscall_entry_asm, KERNEL_CS, IDT_INTERRUPT_GATE_USER);
+
     idtr.limit = sizeof(idt) - 1;
     idtr.base  = (uint64_t)&idt;
 
@@ -171,6 +179,5 @@ void idt_dump(void) {
     for (uint32_t i = 0; i < 32; i++) {
         idt_entry_print(i, &idt[i]);
     }
+    idt_entry_print(0x80, &idt[0x80]);
 }
-
-
