@@ -7,6 +7,8 @@
 
 static uint64_t next_task_id = 1;
 
+struct task *current_task = NULL;
+
 struct task *task_create(void) {
     page_table_t *pml4 = vmm_new_address_space();
     if (pml4 == NULL) {

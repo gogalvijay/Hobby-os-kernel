@@ -1,9 +1,22 @@
 #include "syscall.h"
 #include "kprintf.h"
+#include "task.h"
+#include "uaccess.h"
 
 static long sys_write(uint64_t user_ptr, uint64_t len) {
     if (len > 255) {
         len = 255;
+    }
+
+    if (current_task == NULL) {
+        kprintf("sys_write: no current task, rejecting\n");
+        return -1;
+    }
+
+    if (!uva_check_range(current_task->pml4, user_ptr, len, false)) {
+        kprintf("sys_write: invalid user pointer 0x%lx len=0x%lx, rejecting\n",
+                user_ptr, len);
+        return -1;
     }
 
     char buf[256];

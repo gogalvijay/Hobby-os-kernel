@@ -11,4 +11,6 @@ struct task {
 
 struct task *task_create(void);
 
+extern struct task *current_task;
+
 #endif

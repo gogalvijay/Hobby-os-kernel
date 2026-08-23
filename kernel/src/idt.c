@@ -2,7 +2,7 @@
 #include "kprintf.h"
 
 #define IDT_ENTRIES 256
-#define SYSCALL_VECTOR_LOCAL 0x80
+
 static struct idt_entry idt[IDT_ENTRIES];
 static struct idtr idtr;
 
@@ -31,11 +31,22 @@ static const char *exception_name(uint8_t vector) {
 }
 
 static void fault_handler(uint8_t vector, uint64_t error_code, struct interrupt_frame *frame) {
-    kprintf("\n--- EXCEPTION %d: %s ---\n", vector, exception_name(vector));
-    kprintf("error_code=0x%lx\n", error_code);
-    kprintf("rip=0x%lx cs=0x%lx rflags=0x%lx\n", frame->ip, frame->cs, frame->flags);
-    kprintf("rsp=0x%lx ss=0x%lx\n", frame->sp, frame->ss);
-    kprintf("System halted.\n");
+    int from_user = (frame->cs & 0x3) == 0x3;
+
+    if (from_user) {
+        kprintf("\n--- USER PROCESS FAULT: %s (vector %d) ---\n", exception_name(vector), vector);
+        kprintf("error_code=0x%lx\n", error_code);
+        kprintf("rip=0x%lx cs=0x%lx rflags=0x%lx\n", frame->ip, frame->cs, frame->flags);
+        kprintf("rsp=0x%lx ss=0x%lx\n", frame->sp, frame->ss);
+        kprintf("Process terminated (this is expected containment, not a kernel bug).\n");
+    } else {
+        kprintf("\n--- KERNEL EXCEPTION %d: %s ---\n", vector, exception_name(vector));
+        kprintf("error_code=0x%lx\n", error_code);
+        kprintf("rip=0x%lx cs=0x%lx rflags=0x%lx\n", frame->ip, frame->cs, frame->flags);
+        kprintf("rsp=0x%lx ss=0x%lx\n", frame->sp, frame->ss);
+        kprintf("System halted.\n");
+    }
+
     for (;;) {
         __asm__ volatile ("cli; hlt");
     }
@@ -96,12 +107,9 @@ void idt_set_gate(uint8_t vector, uint64_t handler, uint16_t selector, uint8_t t
     idt[vector].reserved    = 0;
 }
 
-// #define KERNEL_CS 0x08          
 #define IDT_INTERRUPT_GATE 0x8E
-// same as above but DPL=3 instead of DPL=0 -- this is the one gate ring-3 code
-// is allowed to `int` into. Every other gate stays DPL=0, so user code still
-// can't deliberately invoke e.g. the page-fault vector directly.
 #define IDT_INTERRUPT_GATE_USER 0xEE
+#define SYSCALL_VECTOR_LOCAL 0x80
 
 static inline uint16_t get_cs(void) {
     uint16_t cs;

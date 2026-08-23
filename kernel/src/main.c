@@ -16,7 +16,7 @@
 #include "usermode.h"
 
 #define PGSIZE 4096
-#define USER_STACK_TOP 0x0000000006000000ULL  // arbitrary, well clear of typical ELF load addresses
+#define USER_STACK_TOP 0x0000000006000000ULL  
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -209,7 +209,7 @@ void kmain(void) {
 	}
 
 	{
-		// day 31-32 create a task,load the ELF module INTO ITS OWN address space give it a user stack, and drop into ring 3.
+		// day 31-36
 		page_table_t *original_pml4 = get_current_pml4();
 
 		struct task *t = task_create();
@@ -218,8 +218,8 @@ void kmain(void) {
 		} else {
 			kprintf("task_id=%ld new_pml4=%lx\n", (int64_t)t->task_id, (uint64_t)t->pml4);
 
-			if (module_request.response == NULL || module_request.response->module_count == 0) {
-				kprintf("no module found for user program\n");
+			if (module_request.response == NULL || module_request.response->module_count < 2) {
+				kprintf("user_test.elf module not found\n");
 			} else {
 				struct limine_file *mod = module_request.response->modules[1];
 				uint64_t entry = 0;
@@ -237,6 +237,8 @@ void kmain(void) {
 						uint64_t stack_flags = (1ULL << 0) | (1ULL << 1) | (1ULL << 2);
 
 						vmm_map(t->pml4, USER_STACK_TOP - PGSIZE, stack_phys, stack_flags);
+
+						current_task = t; 
 
 						kprintf("entering ring 3 at entry=%lx stack=%lx\n",
 							entry, (uint64_t)USER_STACK_TOP);
