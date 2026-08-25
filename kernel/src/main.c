@@ -207,7 +207,9 @@ void kmain(void) {
 		void *c = kmalloc(16);
 		kprintf("kmalloc c=%lx\n", (uint64_t)c);
 	}
-
+	
+	task_table_init();
+	
 	{
 		// day 31-36
 		page_table_t *original_pml4 = get_current_pml4();
@@ -252,6 +254,62 @@ void kmain(void) {
 		}
 
 		(void)original_pml4;
+	}
+
+	{
+		
+		kprintf("\n--- task table test (day 38-39) ---\n");
+
+		struct task *t1 = task_create();
+		struct task *t2 = task_create();
+		struct task *t3 = task_create();
+		kprintf("created t1_id=%ld t2_id=%ld t3_id=%ld\n",
+			(int64_t)t1->task_id, (int64_t)t2->task_id, (int64_t)t3->task_id);
+		task_dump();
+
+		uint64_t freed_id = t2->task_id;
+		task_destroy(t2);
+		task_dump();
+
+		struct task *t4 = task_create();
+		if (t4 != NULL && t4->task_id == freed_id) {
+			kprintf("PASS: free-list reuse works, new task reused id=%ld\n",
+				(int64_t)t4->task_id);
+		} else {
+			kprintf("FAIL: expected reused id=%ld, got %ld\n",
+				(int64_t)freed_id, t4 ? (int64_t)t4->task_id : -1);
+		}
+		task_dump();
+
+		static struct task *stress_tasks[MAX_TASKS];
+		int stress_count = 0;
+		for (int i = 0; i < MAX_TASKS; i++) {
+			struct task *t = task_create();
+			if (t == NULL) {
+				break;
+			}
+			stress_tasks[stress_count++] = t;
+		}
+		kprintf("filled %d more slots (table should be full now)\n", stress_count);
+
+		struct task *overflow = task_create();
+		if (overflow == NULL) {
+			kprintf("PASS: task_create returned NULL when table was full\n");
+		} else {
+			kprintf("FAIL: task_create should have failed, got task_id=%ld\n",
+				(int64_t)overflow->task_id);
+		}
+
+		for (int i = 0; i < stress_count; i++) {
+			task_destroy(stress_tasks[i]);
+		}
+		task_destroy(t1);
+		task_destroy(t3);
+		task_destroy(t4);
+
+		kprintf("after cleanup, dump should show nothing:\n");
+		task_dump();
+		kprintf("--- task table test done ---\n\n");
 	}
 
 	{
