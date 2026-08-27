@@ -15,8 +15,21 @@
 #include "task.h"
 #include "usermode.h"
 
+#include "context_switch.h"
+
+#define CONTEXT_TEST_ITERS 5
+
+
+
 #define PGSIZE 4096
-#define USER_STACK_TOP 0x0000000006000000ULL  
+#define USER_STACK_TOP 0x0000000006000000ULL
+
+
+static volatile int task_a_yield_count = 0;
+static volatile int task_b_yield_count = 0;
+static struct task *context_test_task_a_ref;
+static struct task *context_test_task_b_ref;
+static struct task *context_test_current;
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[] = LIMINE_BASE_REVISION(6);
@@ -64,6 +77,28 @@ static void hcf(void) {
         asm ("idle 0");
 #endif
     }
+}
+
+
+
+static void context_test_task_a(void) {
+    for (int i = 0; i < CONTEXT_TEST_ITERS; i++) {
+        task_a_yield_count++;
+        kprintf("[task A] running, yield_count=%d\n", task_a_yield_count);
+        context_switch(context_test_task_a_ref, context_test_task_b_ref);
+    }
+    kprintf("[task A] finished all iterations, halting\n");
+    for (;;) { __asm__ volatile ("hlt"); }
+}
+
+static void context_test_task_b(void) {
+    for (int i = 0; i < CONTEXT_TEST_ITERS; i++) {
+        task_b_yield_count++;
+        kprintf("[task B] running, yield_count=%d\n", task_b_yield_count);
+        context_switch(context_test_task_b_ref, context_test_task_a_ref);
+    }
+    kprintf("[task B] finished all iterations, halting\n");
+    for (;;) { __asm__ volatile ("hlt"); }
 }
 
 void kmain(void) {
@@ -211,52 +246,6 @@ void kmain(void) {
 	task_table_init();
 	
 	{
-		// day 31-36
-		page_table_t *original_pml4 = get_current_pml4();
-
-		struct task *t = task_create();
-		if (t == NULL) {
-			kprintf("task_create failed\n");
-		} else {
-			kprintf("task_id=%ld new_pml4=%lx\n", (int64_t)t->task_id, (uint64_t)t->pml4);
-
-			if (module_request.response == NULL || module_request.response->module_count < 2) {
-				kprintf("user_test.elf module not found\n");
-			} else {
-				struct limine_file *mod = module_request.response->modules[1];
-				uint64_t entry = 0;
-
-				if (!elf_load(t->pml4, mod->address, &entry)) {
-					kprintf("elf_load into task pml4 failed\n");
-				} else {
-					kprintf("elf_load ok, entry=%lx\n", entry);
-
-					struct PageInfo *stack_pp = page_alloc(1);
-					if (stack_pp == NULL) {
-						kprintf("failed to allocate user stack page\n");
-					} else {
-						uint64_t stack_phys = page2pa(stack_pp);
-						uint64_t stack_flags = (1ULL << 0) | (1ULL << 1) | (1ULL << 2);
-
-						vmm_map(t->pml4, USER_STACK_TOP - PGSIZE, stack_phys, stack_flags);
-
-						current_task = t; 
-
-						kprintf("entering ring 3 at entry=%lx stack=%lx\n",
-							entry, (uint64_t)USER_STACK_TOP);
-
-						vmm_switch_address_space(t->pml4);
-						enter_usermode(entry, USER_STACK_TOP);
-
-					}
-				}
-			}
-		}
-
-		(void)original_pml4;
-	}
-
-	{
 		
 		kprintf("\n--- task table test (day 38-39) ---\n");
 
@@ -317,6 +306,77 @@ void kmain(void) {
 		__asm__ volatile ("str %0" : "=r"(tr));
 		kprintf("TR=%x (expect 28)\n", tr);
 	}
+
+
+	{
+		kprintf("\n--- context switch test (day 40-42) ---\n");
+
+		task_a_yield_count = 0;
+		task_b_yield_count = 0;
+
+		struct task *ta = task_create_kernel(context_test_task_a);
+		struct task *tb = task_create_kernel(context_test_task_b);
+
+		if (ta == NULL || tb == NULL) {
+			kprintf("FAIL: could not create context-switch test tasks\n");
+		} else {
+			context_test_task_a_ref = ta;
+			context_test_task_b_ref = tb;
+
+			kprintf("switching into task A for the first time (old=NULL)...\n");
+			context_switch(NULL, ta);
+
+			kprintf("ERROR: should never reach this line\n");
+		}
+	}
+
+        
+	{
+		// day 31-36
+		page_table_t *original_pml4 = get_current_pml4();
+
+		struct task *t = task_create();
+		if (t == NULL) {
+			kprintf("task_create failed\n");
+		} else {
+			kprintf("task_id=%ld new_pml4=%lx\n", (int64_t)t->task_id, (uint64_t)t->pml4);
+
+			if (module_request.response == NULL || module_request.response->module_count < 2) {
+				kprintf("user_test.elf module not found\n");
+			} else {
+				struct limine_file *mod = module_request.response->modules[1];
+				uint64_t entry = 0;
+
+				if (!elf_load(t->pml4, mod->address, &entry)) {
+					kprintf("elf_load into task pml4 failed\n");
+				} else {
+					kprintf("elf_load ok, entry=%lx\n", entry);
+
+					struct PageInfo *stack_pp = page_alloc(1);
+					if (stack_pp == NULL) {
+						kprintf("failed to allocate user stack page\n");
+					} else {
+						uint64_t stack_phys = page2pa(stack_pp);
+						uint64_t stack_flags = (1ULL << 0) | (1ULL << 1) | (1ULL << 2);
+
+						vmm_map(t->pml4, USER_STACK_TOP - PGSIZE, stack_phys, stack_flags);
+
+						current_task = t; 
+
+						kprintf("entering ring 3 at entry=%lx stack=%lx\n",
+							entry, (uint64_t)USER_STACK_TOP);
+
+						vmm_switch_address_space(t->pml4);
+						enter_usermode(entry, USER_STACK_TOP);
+
+					}
+				}
+			}
+		}
+
+		(void)original_pml4;
+	}
+
     
     }
 
