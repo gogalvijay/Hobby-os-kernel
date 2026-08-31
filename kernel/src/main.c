@@ -15,6 +15,11 @@
 #include "task.h"
 #include "usermode.h"
 
+#include "pic.h"
+#include "pit.h"
+#include "timer.h"
+#include "lapic.h"  
+
 #include "context_switch.h"
 
 #define CONTEXT_TEST_ITERS 5
@@ -99,6 +104,30 @@ static void context_test_task_b(void) {
     }
     kprintf("[task B] finished all iterations, halting\n");
     for (;;) { __asm__ volatile ("hlt"); }
+}
+
+
+static volatile uint64_t preempt_a_prints = 0;
+static volatile uint64_t preempt_b_prints = 0;
+
+static void preempt_test_task_a(void) {
+    for (;;) {
+        preempt_a_prints++;
+        if (preempt_a_prints <= 5 || preempt_a_prints % 200000 == 0) {
+            kprintf("[task A] tick=%ld prints=%ld\n",
+                    (int64_t)timer_get_ticks(), (int64_t)preempt_a_prints);
+        }
+    }
+}
+
+static void preempt_test_task_b(void) {
+    for (;;) {
+        preempt_b_prints++;
+        if (preempt_b_prints <= 5 || preempt_b_prints % 200000 == 0) {
+            kprintf("[task B] tick=%ld prints=%ld\n",
+                    (int64_t)timer_get_ticks(), (int64_t)preempt_b_prints);
+        }
+    }
 }
 
 void kmain(void) {
@@ -308,6 +337,52 @@ void kmain(void) {
 	}
 
 
+
+        
+	{
+		kprintf("\n--- preemptive timer test (day 43-44) ---\n");
+
+		pic_remap();
+		lapic_enable();
+		pit_init(100);
+		pic_clear_mask(0);
+
+		uint8_t pic1_mask;
+		__asm__ volatile ("inb $0x21, %%al" : "=a"(pic1_mask));
+		kprintf("PIC1 mask after setup=0x%x (bit0 should be 0)\n", pic1_mask);
+
+		struct task *pa = task_create_kernel(preempt_test_task_a);
+		struct task *pb = task_create_kernel(preempt_test_task_b);
+
+		if (pa == NULL || pb == NULL) {
+			kprintf("FAIL: could not create preemption test tasks\n");
+		} else {
+			timer_set_round_robin_tasks(pa, pb);
+			current_task = pa;
+
+			kprintf("tick before manual int=%ld\n", (int64_t)timer_get_ticks());
+			__asm__ volatile ("int $0x20");
+			kprintf("tick after manual int=%ld (should be +1 if timer_isr works at all)\n",
+				(int64_t)timer_get_ticks());
+
+			kprintf("enabling interrupts, starting task A "
+				"(neither task will ever call context_switch itself)...\n");
+
+			__asm__ volatile ("sti");   // interrupts were off since boot; turn them on now
+
+			uint64_t rflags;
+			__asm__ volatile ("pushfq; pop %0" : "=r"(rflags));
+			kprintf("rflags=%lx (bit9/IF should be 1)\n", rflags);
+
+			uint8_t pic1_mask_after_sti;
+			__asm__ volatile ("inb $0x21, %%al" : "=a"(pic1_mask_after_sti));
+			kprintf("PIC1 mask after sti=0x%x (bit0 should still be 0)\n", pic1_mask_after_sti);
+
+			context_switch(NULL, pa);
+
+			kprintf("ERROR: should never reach this line\n");
+		}
+	}
 	{
 		kprintf("\n--- context switch test (day 40-42) ---\n");
 
@@ -329,6 +404,8 @@ void kmain(void) {
 			kprintf("ERROR: should never reach this line\n");
 		}
 	}
+
+
 
         
 	{

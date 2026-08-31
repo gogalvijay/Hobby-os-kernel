@@ -25,3 +25,8 @@ context_switch:
     pop  %rbx
 
     ret
+
+.global task_entry_trampoline
+task_entry_trampoline:
+    sti
+    jmp *%r12

@@ -151,19 +151,21 @@ void task_dump(void) {
     }
 }
 
+extern void task_entry_trampoline(void);
+
 void task_stack_init(struct task *t, void (*entry)(void)) {
     uint64_t *sp = (uint64_t *)t->kstack_top;
 
     sp -= 1;
-    *sp = (uint64_t)entry;     
+    *sp = (uint64_t)task_entry_trampoline;
 
     sp -= 6;
-    sp[0] = 0; // r15
-    sp[1] = 0; // r14
-    sp[2] = 0; // r13
-    sp[3] = 0; // r12
-    sp[4] = 0; // rbp
-    sp[5] = 0; // rbx
+    sp[0] = 0;                  // r15
+    sp[1] = 0;                  // r14
+    sp[2] = 0;                  // r13
+    sp[3] = (uint64_t)entry;    // r12 
+    sp[4] = 0;                  // rbp
+    sp[5] = 0;                  // rbx
 
     t->context_rsp = (uint64_t)sp;
 }

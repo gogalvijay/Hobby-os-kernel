@@ -1,5 +1,8 @@
 #include "idt.h"
 #include "kprintf.h"
+#include "pic.h"
+#include "timer.h"
+#include "gdt.h"
 
 #define IDT_ENTRIES 256
 
@@ -97,6 +100,25 @@ DEFINE_ISR_ERR(29)
 DEFINE_ISR_ERR(30)
 DEFINE_ISR_NOERR(31)
 
+
+
+__attribute__((interrupt))
+static void timer_isr(struct interrupt_frame *frame) {
+    (void)frame;
+
+    __asm__ volatile (
+        "mov $0x10, %%ax\n"
+        "mov %%ax, %%ds\n"
+        "mov %%ax, %%es\n"
+        "mov %%ax, %%fs\n"
+        "mov %%ax, %%gs\n"
+        ::: "ax"
+    );
+
+    timer_tick_handler();
+}
+
+
 void idt_set_gate(uint8_t vector, uint64_t handler, uint16_t selector, uint8_t type_attr) {
     idt[vector].offset_low  = handler & 0xFFFF;
     idt[vector].offset_mid  = (handler >> 16) & 0xFFFF;
@@ -157,6 +179,8 @@ void idt_init(void) {
 
     idt_set_gate(SYSCALL_VECTOR_LOCAL, (uint64_t)syscall_entry_asm, KERNEL_CS, IDT_INTERRUPT_GATE_USER);
 
+    idt_set_gate(PIC_IRQ0_VECTOR, (uint64_t)timer_isr, KERNEL_CS, IDT_INTERRUPT_GATE);
+
     idtr.limit = sizeof(idt) - 1;
     idtr.base  = (uint64_t)&idt;
 
@@ -188,4 +212,5 @@ void idt_dump(void) {
         idt_entry_print(i, &idt[i]);
     }
     idt_entry_print(0x80, &idt[0x80]);
+    idt_entry_print(PIC_IRQ0_VECTOR, &idt[PIC_IRQ0_VECTOR]);
 }
