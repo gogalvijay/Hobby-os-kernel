@@ -22,6 +22,9 @@
 
 #include "context_switch.h"
 
+#include "scheduler.h"
+
+
 #define CONTEXT_TEST_ITERS 5
 
 
@@ -129,6 +132,25 @@ static void preempt_test_task_b(void) {
         }
     }
 }
+
+static volatile uint64_t sched_prints[4] = {0, 0, 0, 0};
+
+#define DEFINE_SCHED_TASK(NAME, IDX) \
+static void NAME(void) { \
+    for (;;) { \
+        sched_prints[IDX]++; \
+        if (sched_prints[IDX] <= 5 || sched_prints[IDX] % 200000 == 0) { \
+            kprintf("[sched task %d] tick=%ld prints=%ld\n", \
+                    IDX, (int64_t)timer_get_ticks(), (int64_t)sched_prints[IDX]); \
+        } \
+    } \
+}
+
+DEFINE_SCHED_TASK(sched_task_0, 0)
+DEFINE_SCHED_TASK(sched_task_1, 1)
+DEFINE_SCHED_TASK(sched_task_2, 2)
+DEFINE_SCHED_TASK(sched_task_3, 3)
+
 
 void kmain(void) {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false) {
@@ -338,8 +360,39 @@ void kmain(void) {
 
 
 
+        {
+		kprintf("\n--- round-robin scheduler test (day 45-46) ---\n");
+
+		pic_remap();
+		lapic_enable();
+		pit_init(100);
+		pic_clear_mask(0);
+
+		scheduler_init();
+
+		struct task *t0 = task_create_kernel(sched_task_0);
+		struct task *t1 = task_create_kernel(sched_task_1);
+		struct task *t2 = task_create_kernel(sched_task_2);
+		struct task *t3 = task_create_kernel(sched_task_3);
+
+		if (t0 == NULL || t1 == NULL || t2 == NULL || t3 == NULL) {
+			kprintf("FAIL: could not create scheduler test tasks\n");
+		} else {
+			t0->state = TASK_RUNNING;
+			current_task = t0;
+
+			kprintf("enabling interrupts, starting task 0 "
+				"(scheduler will pick who runs next via the real task table)...\n");
+
+			__asm__ volatile ("sti");
+
+			context_switch(NULL, t0);
+
+			kprintf("ERROR: should never reach this line\n");
+		}
+	}
         
-	{
+/*	{
 		kprintf("\n--- preemptive timer test (day 43-44) ---\n");
 
 		pic_remap();
@@ -382,7 +435,7 @@ void kmain(void) {
 
 			kprintf("ERROR: should never reach this line\n");
 		}
-	}
+	}*/
 	{
 		kprintf("\n--- context switch test (day 40-42) ---\n");
 
@@ -404,7 +457,6 @@ void kmain(void) {
 			kprintf("ERROR: should never reach this line\n");
 		}
 	}
-
 
 
         

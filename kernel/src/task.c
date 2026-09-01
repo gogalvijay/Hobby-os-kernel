@@ -169,3 +169,14 @@ void task_stack_init(struct task *t, void (*entry)(void)) {
 
     t->context_rsp = (uint64_t)sp;
 }
+
+struct task *task_table_ptr(size_t index) {
+    if (index >= MAX_TASKS) {
+        return NULL;
+    }
+    return &task_table[index];
+}
+
+size_t task_table_size(void) {
+    return MAX_TASKS;
+}

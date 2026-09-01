@@ -38,4 +38,7 @@ struct task *task_create_kernel(void (*entry)(void));
 
 extern struct task *current_task;
 
+struct task *task_table_ptr(size_t index);
+size_t task_table_size(void);
+
 #endif
