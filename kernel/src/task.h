@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 #include "paging.h"
+#include "syscall.h" 
+
 
 #define MAX_TASKS 64
 #define TASK_KSTACK_PAGES 2
@@ -40,5 +42,8 @@ extern struct task *current_task;
 
 struct task *task_table_ptr(size_t index);
 size_t task_table_size(void);
+
+struct task *task_fork(struct task *parent, struct syscall_regs *parent_regs);
+
 
 #endif

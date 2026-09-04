@@ -11,6 +11,11 @@ static struct task *task_free_list;
 
 struct task *current_task = NULL;
 
+
+#include "syscall.h"
+
+extern void syscall_entry_return(void);   
+
 void task_table_init(void) {
     task_free_list = NULL;
 
@@ -180,3 +185,52 @@ struct task *task_table_ptr(size_t index) {
 size_t task_table_size(void) {
     return MAX_TASKS;
 }
+
+
+
+
+struct task *task_fork(struct task *parent, struct syscall_regs *parent_regs) {
+    struct task *child = task_slot_alloc();
+    if (child == NULL) {
+        return NULL;
+    }
+
+    page_table_t *child_pml4 = vmm_copy_address_space(parent->pml4);
+    if (child_pml4 == NULL) {
+        task_slot_free(child);
+        return NULL;
+    }
+
+    if (!task_kstack_alloc(child)) {
+        task_slot_free(child);
+        return NULL;
+    }
+
+    child->pml4 = child_pml4;
+
+    uint8_t *frame_top = child->kstack_top - sizeof(struct syscall_regs);
+    struct syscall_regs *child_regs = (struct syscall_regs *)frame_top;
+
+    *child_regs = *parent_regs;
+    child_regs->rax = 0;
+
+    uint64_t *sp = (uint64_t *)child_regs;
+    sp -= 1;
+    *sp = (uint64_t)syscall_entry_return;
+    sp -= 6;
+    sp[0] = 0;                        // r15
+    sp[1] = 0;                        // r14
+    sp[2] = 0;                        // r13
+    sp[3] = (uint64_t)child_regs;     // r12
+    sp[4] = 0;                        // rbp
+    sp[5] = 0;                        // rbx
+
+    child->context_rsp = (uint64_t)sp;
+    child->state = TASK_RUNNABLE;
+
+    kprintf("task_fork: parent_id=%ld child_id=%ld\n",
+            (int64_t)parent->task_id, (int64_t)child->task_id);
+
+    return child;
+}
+

@@ -28,4 +28,6 @@ void invlpg(uint64_t vaddr);
 page_table_t *get_current_pml4(void);
 page_table_t *vmm_new_address_space(void);
 void vmm_switch_address_space(page_table_t *pml4);
+page_table_t *vmm_copy_address_space(page_table_t *parent_pml4);
+
 #endif

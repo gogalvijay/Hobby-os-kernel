@@ -10,6 +10,73 @@
 #define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
 #define KERNEL_PML4_START 256   // indices 256-511 = higher half = kernel space
 
+#include "page_alloc.h"
+#include "memory.h"
+
+page_table_t *vmm_copy_address_space(page_table_t *parent_pml4) {
+    struct PageInfo *pml4_pp = page_alloc(1);
+    if (pml4_pp == NULL) {
+        return NULL;
+    }
+    page_table_t *child_pml4 = (page_table_t *)phys_to_virt(page2pa(pml4_pp));
+
+    for (int i = KERNEL_PML4_START; i < 512; i++) {
+        child_pml4->entries[i] = parent_pml4->entries[i];
+    }
+
+    for (int i4 = 0; i4 < KERNEL_PML4_START; i4++) {
+        if (!present(parent_pml4->entries[i4])) {
+            continue;
+        }
+        page_table_t *parent_pdpt =
+            (page_table_t *)phys_to_virt(pte_get_addr(parent_pml4->entries[i4]));
+
+        for (int i3 = 0; i3 < 512; i3++) {
+            if (!present(parent_pdpt->entries[i3])) {
+                continue;
+            }
+            page_table_t *parent_pd =
+                (page_table_t *)phys_to_virt(pte_get_addr(parent_pdpt->entries[i3]));
+
+            for (int i2 = 0; i2 < 512; i2++) {
+                if (!present(parent_pd->entries[i2])) {
+                    continue;
+                }
+                page_table_t *parent_pt =
+                    (page_table_t *)phys_to_virt(pte_get_addr(parent_pd->entries[i2]));
+
+                for (int i1 = 0; i1 < 512; i1++) {
+                    page_table_entry parent_pte = parent_pt->entries[i1];
+                    if (!present(parent_pte)) {
+                        continue;
+                    }
+
+                    uint64_t vaddr = ((uint64_t)i4 << 39)
+                                    | ((uint64_t)i3 << 30)
+                                    | ((uint64_t)i2 << 21)
+                                    | ((uint64_t)i1 << 12);
+
+                    uint64_t parent_phys = pte_get_addr(parent_pte);
+                    uint64_t flags = parent_pte & 0xFFFULL;
+
+                    struct PageInfo *new_pp = page_alloc(0);
+                    if (new_pp == NULL) {
+                        return NULL;
+                    }
+                    uint64_t new_phys = page2pa(new_pp);
+
+                    memcpy(phys_to_virt(new_phys), phys_to_virt(parent_phys), 4096);
+
+                    vmm_map(child_pml4, vaddr, new_phys, flags);
+                }
+            }
+        }
+    }
+
+    return child_pml4;
+}
+
+
 bool present(page_table_entry pte){
 	return pte&1;
 }

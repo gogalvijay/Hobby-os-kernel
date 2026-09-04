@@ -33,6 +33,9 @@ syscall_entry_asm:
     mov %rsp, %rdi          
     call syscall_dispatch
 
+.global syscall_entry_return
+syscall_entry_return:
+
     mov $USER_DS, %ax
     mov %ax, %ds
     mov %ax, %es

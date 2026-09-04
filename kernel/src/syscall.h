@@ -7,6 +7,8 @@
 
 #define SYS_WRITE 0
 #define SYS_EXIT  1
+#define SYS_FORK  2
+
 
 // Layout must exactly match the push order in syscall_entry.S.
 // Fields are listed low-address-first, i.e. in the order they end up

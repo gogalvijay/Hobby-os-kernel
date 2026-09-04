@@ -18,7 +18,7 @@
 #include "pic.h"
 #include "pit.h"
 #include "timer.h"
-#include "lapic.h"  
+#include "lapic.h"
 
 #include "context_switch.h"
 
@@ -26,8 +26,6 @@
 
 
 #define CONTEXT_TEST_ITERS 5
-
-
 
 #define PGSIZE 4096
 #define USER_STACK_TOP 0x0000000006000000ULL
@@ -85,6 +83,47 @@ static void hcf(void) {
         asm ("idle 0");
 #endif
     }
+}
+
+// Finds a Limine module whose path ENDS WITH the given suffix (e.g.
+// "fork_test.elf"), so we never depend on a hardcoded module index that
+// shifts every time a module is added/removed/reordered in limine.conf.
+static struct limine_file *find_module(const char *suffix) {
+    if (module_request.response == NULL) {
+        return NULL;
+    }
+
+    size_t suffix_len = 0;
+    while (suffix[suffix_len] != '\0') {
+        suffix_len++;
+    }
+
+    for (uint64_t i = 0; i < module_request.response->module_count; i++) {
+        struct limine_file *mod = module_request.response->modules[i];
+        const char *path = mod->path;
+
+        size_t path_len = 0;
+        while (path[path_len] != '\0') {
+            path_len++;
+        }
+
+        if (path_len < suffix_len) {
+            continue;
+        }
+
+        const char *tail = path + (path_len - suffix_len);
+        size_t j;
+        for (j = 0; j < suffix_len; j++) {
+            if (tail[j] != suffix[j]) {
+                break;
+            }
+        }
+        if (j == suffix_len) {
+            return mod;
+        }
+    }
+
+    return NULL;
 }
 
 
@@ -190,6 +229,16 @@ void kmain(void) {
         kprintf("hhdm offset=%lx\n", g_hhdm_offset);
     }
 
+    if (module_request.response != NULL) {
+        kprintf("module_count=%ld\n", (int64_t)module_request.response->module_count);
+        for (uint64_t i = 0; i < module_request.response->module_count; i++) {
+            kprintf("module[%ld] path=%s\n", (int64_t)i,
+                    module_request.response->modules[i]->path);
+        }
+    } else {
+        kprintf("module_request.response is NULL\n");
+    }
+
     if (memmap_request.response != NULL) {
         pmm_init(memmap_request.response);
         pmm_dump();
@@ -225,7 +274,6 @@ void kmain(void) {
 
 	kprintf("free after 3 frees=%ld\n", (int64_t)count_free());
 
-
 	 
 	//day-16 test
         uint64_t test_vaddr = 0xFFFF800000001000ULL;
@@ -243,7 +291,6 @@ void kmain(void) {
         kprintf("pte_get_addr=%lx\n", pte_get_addr(pte));
         kprintf("present=%d writable=%d\n", present(pte), writable(pte));
 
-    
         //day17-19 tests
     	{	
         page_table_t *pml4 = get_current_pml4();
@@ -278,12 +325,11 @@ void kmain(void) {
         } else {
             kprintf("after unmap: entry=%lx present=%d\n", *pte_after, present(*pte_after));
         }
-    	
     	}
     
 	//day-23
         //phase1_stress_test();
-	//
+
 	{
 		kheap_init();
 		void *a = kmalloc(32);
@@ -297,7 +343,6 @@ void kmain(void) {
 	task_table_init();
 	
 	{
-		
 		kprintf("\n--- task table test (day 38-39) ---\n");
 
 		struct task *t1 = task_create();
@@ -360,7 +405,8 @@ void kmain(void) {
 
 
 
-        {
+	/*
+	{
 		kprintf("\n--- round-robin scheduler test (day 45-46) ---\n");
 
 		pic_remap();
@@ -391,8 +437,10 @@ void kmain(void) {
 			kprintf("ERROR: should never reach this line\n");
 		}
 	}
-        
-/*	{
+	*/
+
+	/*
+	{
 		kprintf("\n--- preemptive timer test (day 43-44) ---\n");
 
 		pic_remap();
@@ -421,7 +469,7 @@ void kmain(void) {
 			kprintf("enabling interrupts, starting task A "
 				"(neither task will ever call context_switch itself)...\n");
 
-			__asm__ volatile ("sti");   // interrupts were off since boot; turn them on now
+			__asm__ volatile ("sti");
 
 			uint64_t rflags;
 			__asm__ volatile ("pushfq; pop %0" : "=r"(rflags));
@@ -435,7 +483,10 @@ void kmain(void) {
 
 			kprintf("ERROR: should never reach this line\n");
 		}
-	}*/
+	}
+	*/
+
+	/*
 	{
 		kprintf("\n--- context switch test (day 40-42) ---\n");
 
@@ -457,9 +508,52 @@ void kmain(void) {
 			kprintf("ERROR: should never reach this line\n");
 		}
 	}
+	*/
 
 
-        
+	{
+		kprintf("\n--- fork test (day 47-49) ---\n");
+
+		pic_remap();
+		lapic_enable();
+		pit_init(100);
+		pic_clear_mask(0);
+		scheduler_init();
+
+		struct task *t = task_create();
+		if (t == NULL) {
+			kprintf("fork test: task_create failed\n");
+		} else {
+			struct limine_file *mod = find_module("fork_test.elf");
+
+			if (mod == NULL) {
+				kprintf("fork_test.elf module not found (check limine.conf + build)\n");
+			} else {
+				uint64_t entry = 0;
+
+				if (!elf_load(t->pml4, mod->address, &entry)) {
+					kprintf("fork test: elf_load failed\n");
+				} else {
+					struct PageInfo *stack_pp = page_alloc(1);
+					uint64_t stack_phys = page2pa(stack_pp);
+					uint64_t stack_flags = (1ULL << 0) | (1ULL << 1) | (1ULL << 2);
+
+					vmm_map(t->pml4, USER_STACK_TOP - PGSIZE, stack_phys, stack_flags);
+
+					current_task = t;
+					t->state = TASK_RUNNING;
+
+					__asm__ volatile ("sti");
+
+					kprintf("fork test: entering ring 3, entry=%lx\n", entry);
+
+					vmm_switch_address_space(t->pml4);
+					enter_usermode(entry, USER_STACK_TOP);
+				}
+			}
+		}
+	}
+
 	{
 		// day 31-36
 		page_table_t *original_pml4 = get_current_pml4();
@@ -470,10 +564,11 @@ void kmain(void) {
 		} else {
 			kprintf("task_id=%ld new_pml4=%lx\n", (int64_t)t->task_id, (uint64_t)t->pml4);
 
-			if (module_request.response == NULL || module_request.response->module_count < 2) {
+			struct limine_file *mod = find_module("user_test.elf");
+
+			if (mod == NULL) {
 				kprintf("user_test.elf module not found\n");
 			} else {
-				struct limine_file *mod = module_request.response->modules[1];
 				uint64_t entry = 0;
 
 				if (!elf_load(t->pml4, mod->address, &entry)) {
@@ -497,7 +592,6 @@ void kmain(void) {
 
 						vmm_switch_address_space(t->pml4);
 						enter_usermode(entry, USER_STACK_TOP);
-
 					}
 				}
 			}
@@ -505,8 +599,6 @@ void kmain(void) {
 
 		(void)original_pml4;
 	}
-
-    
     }
 
     hcf();

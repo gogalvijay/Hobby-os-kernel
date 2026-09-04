@@ -3,6 +3,18 @@
 #include "task.h"
 #include "uaccess.h"
 
+static long sys_fork(struct syscall_regs *regs) {
+    if (current_task == NULL) {
+        return -1;
+    }
+    struct task *child = task_fork(current_task, regs);
+    if (child == NULL) {
+        return -1;
+    }
+    return (long)child->task_id;
+}
+
+
 static long sys_write(uint64_t user_ptr, uint64_t len) {
     if (len > 255) {
         len = 255;
@@ -31,12 +43,28 @@ static long sys_write(uint64_t user_ptr, uint64_t len) {
     return (long)len;
 }
 
+//static long sys_exit(uint64_t code) {
+  //  kprintf("\nuser program exited with code=%ld\n", (long)code);
+    //for (;;) {
+      //  __asm__ volatile ("cli; hlt");
+    //}
+    //return 0; // unreachable
+//}
+
+
 static long sys_exit(uint64_t code) {
     kprintf("\nuser program exited with code=%ld\n", (long)code);
-    for (;;) {
-        __asm__ volatile ("cli; hlt");
+
+    if (current_task != NULL) {
+        current_task->state = TASK_DEAD;
     }
-    return 0; // unreachable
+    
+    __asm__ volatile ("sti");
+
+    for (;;) {
+        __asm__ volatile ("hlt");
+    }
+    return 0;
 }
 
 void syscall_dispatch(struct syscall_regs *regs) {
@@ -49,7 +77,11 @@ void syscall_dispatch(struct syscall_regs *regs) {
         case SYS_EXIT:
             ret = sys_exit(regs->rdi);
             break;
-        default:
+        case SYS_FORK:
+            ret = sys_fork(regs);
+            break;
+	
+	default:
             kprintf("syscall_dispatch: unknown syscall %ld\n", (long)regs->rax);
             ret = -1;
             break;
