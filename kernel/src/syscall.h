@@ -8,6 +8,9 @@
 #define SYS_WRITE 0
 #define SYS_EXIT  1
 #define SYS_FORK  2
+#define SYS_SEND  3
+#define SYS_RECV  4
+
 
 
 // Layout must exactly match the push order in syscall_entry.S.

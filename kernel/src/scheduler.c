@@ -7,6 +7,22 @@ extern size_t task_table_size(void);
 
 static struct task *idle_task = NULL;
 
+#include "paging.h"
+#include "context_switch.h"
+
+#include "gdt.h"
+
+void scheduler_switch_to(struct task *old, struct task *new) {
+    if (new->pml4 != NULL) {
+        vmm_switch_address_space(new->pml4);
+    }
+    if (new->kstack_top != NULL) {
+        tss_set_rsp0((uint64_t)new->kstack_top);
+    }
+    context_switch(old, new);
+}
+
+
 void scheduler_set_idle_task(struct task *t) {
     idle_task = t;
 }

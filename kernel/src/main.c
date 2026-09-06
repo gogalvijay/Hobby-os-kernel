@@ -511,7 +511,7 @@ void kmain(void) {
 	*/
 
 
-	{
+/*	{
 		kprintf("\n--- fork test (day 47-49) ---\n");
 
 		pic_remap();
@@ -551,6 +551,57 @@ void kmain(void) {
 					enter_usermode(entry, USER_STACK_TOP);
 				}
 			}
+		}
+	}*/
+
+	{
+		kprintf("\n--- IPC test (day 50-51) ---\n");
+
+		pic_remap();
+		lapic_enable();
+		pit_init(100);
+		pic_clear_mask(0);
+		scheduler_init();
+
+		struct task *receiver = task_create();
+		struct task *sender = task_create();
+
+		struct limine_file *recv_mod = find_module("ipc_receiver.elf");
+		struct limine_file *send_mod = find_module("ipc_sender.elf");
+
+		if (receiver == NULL || sender == NULL || recv_mod == NULL || send_mod == NULL) {
+			kprintf("IPC test: setup failed\n");
+		} else {
+			uint64_t recv_entry = 0, send_entry = 0;
+			elf_load(receiver->pml4, recv_mod->address, &recv_entry);
+			elf_load(sender->pml4, send_mod->address, &send_entry);
+
+			struct PageInfo *recv_stack = page_alloc(1);
+			struct PageInfo *send_stack = page_alloc(1);
+			uint64_t stack_flags = (1ULL << 0) | (1ULL << 1) | (1ULL << 2);
+
+			vmm_map(receiver->pml4, USER_STACK_TOP - PGSIZE, page2pa(recv_stack), stack_flags);
+			vmm_map(sender->pml4, USER_STACK_TOP - PGSIZE, page2pa(send_stack), stack_flags);
+
+			kprintf("receiver task_id=%ld sender task_id=%ld\n",
+				(int64_t)receiver->task_id, (int64_t)sender->task_id);
+
+			//receiver->state = TASK_RUNNING;
+	                task_prepare_user_entry(receiver, recv_entry, USER_STACK_TOP);
+			task_prepare_user_entry(sender, send_entry, USER_STACK_TOP);
+
+			kprintf("receiver task_id=%ld sender task_id=%ld\n",
+				(int64_t)receiver->task_id, (int64_t)sender->task_id);
+
+			current_task = receiver;
+			receiver->state = TASK_RUNNING;
+
+			__asm__ volatile ("sti");
+
+			//context_switch(NULL, receiver);
+			scheduler_switch_to(NULL, receiver);
+
+			kprintf("ERROR: should never reach this line\n");
 		}
 	}
 

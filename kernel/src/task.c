@@ -5,6 +5,8 @@
 #include "paging.h"
 #include "hhdm.h"
 #include "kprintf.h"
+#include "scheduler.h"
+#include "usermode.h"
 
 static struct task task_table[MAX_TASKS];
 static struct task *task_free_list;
@@ -233,4 +235,90 @@ struct task *task_fork(struct task *parent, struct syscall_regs *parent_regs) {
 
     return child;
 }
+struct task *task_find_by_id(uint64_t task_id) {
+    for (size_t i = 0; i < task_table_size(); i++) {
+        struct task *t = task_table_ptr(i);
+        if (t != NULL && t->state != TASK_UNUSED && t->task_id == task_id) {
+            return t;
+        }
+    }
+    return NULL;
+}
 
+/*void task_block_and_switch(enum block_reason reason, uint64_t peer, uint64_t buf, uint64_t len) {
+    struct task *self = current_task;
+
+    self->state = TASK_BLOCKED;
+    self->block_reason = reason;
+    self->ipc_peer = peer;
+    self->ipc_buf = buf;
+    self->ipc_len = len;
+
+    struct task *next = scheduler_pick_next(self);
+
+    if (next == self) {
+        return;
+    }
+
+    current_task = next;
+    next->state = TASK_RUNNING;
+
+    context_switch(self, next);
+
+}*/
+
+
+void task_block_and_switch(enum block_reason reason, uint64_t peer, uint64_t buf, uint64_t len) {
+    struct task *self = current_task;
+
+    self->state = TASK_BLOCKED;
+    self->block_reason = reason;
+    self->ipc_peer = peer;
+    self->ipc_buf = buf;
+    self->ipc_len = len;
+
+    struct task *next = scheduler_pick_next(self);
+
+    if (next == self) {
+        return;
+    }
+
+    current_task = next;
+    next->state = TASK_RUNNING;
+
+    scheduler_switch_to(self, next);   
+}
+
+void task_wake(struct task *t) {
+    t->state = TASK_RUNNABLE;
+    t->block_reason = BLOCK_NONE;
+}
+
+
+
+void task_prepare_user_entry(struct task *t, uint64_t entry, uint64_t user_stack_top) {
+    uint8_t *frame_top = t->kstack_top - sizeof(struct syscall_regs);
+    struct syscall_regs *regs = (struct syscall_regs *)frame_top;
+
+    uint8_t *p = (uint8_t *)regs;
+    for (size_t i = 0; i < sizeof(struct syscall_regs); i++) {
+        p[i] = 0;
+    }
+
+    regs->rip     = entry;
+    regs->cs      = USER_CS;
+    regs->rflags  = 0x202;         
+    regs->rsp     = user_stack_top;
+    regs->user_ss = USER_DS;
+
+    uint64_t *sp = (uint64_t *)regs;
+    sp -= 1;
+    *sp = (uint64_t)syscall_entry_return;
+    sp -= 6;
+    sp[0] = 0; sp[1] = 0; sp[2] = 0;
+    sp[3] = (uint64_t)regs;
+    sp[4] = 0; sp[5] = 0;
+
+    t->context_rsp = (uint64_t)sp;
+    t->state = TASK_RUNNABLE;
+}

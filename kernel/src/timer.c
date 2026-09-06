@@ -37,5 +37,6 @@ void timer_tick_handler(void) {
 
     current_task = next;
 
-    context_switch(prev, next);
+    //context_switch(prev, next);
+    scheduler_switch_to(prev, next);
 }

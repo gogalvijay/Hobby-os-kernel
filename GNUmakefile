@@ -169,6 +169,8 @@ $(IMAGE_NAME).iso: limine-binary/limine kernel
 	cp -v kernel/userland/test.elf iso_root/boot/
 	cp -v kernel/userland/user_test.elf iso_root/boot/
 	cp -v kernel/userland/fork_test.elf iso_root/boot/
+	cp -v kernel/userland/ipc_sender.elf iso_root/boot/
+	cp -v kernel/userland/ipc_receiver.elf iso_root/boot/
 ifeq ($(ARCH),x86_64)
 	cp -v limine-binary/limine-bios.sys limine-binary/limine-bios-cd.bin limine-binary/limine-uefi-cd.bin iso_root/boot/limine/
 	cp -v limine-binary/BOOTX64.EFI iso_root/EFI/BOOT/
@@ -226,6 +228,8 @@ endif
 	mcopy -i $(IMAGE_NAME).hdd@@1M kernel/userland/test.elf ::/boot
         mcopy -i $(IMAGE_NAME).hdd@@1M kernel/userland/user_test.elf ::/boot
 	mcopy -i $(IMAGE_NAME).hdd@@1M kernel/userland/fork_test.elf ::/boot
+	mcopy -i $(IMAGE_NAME).hdd@@1M kernel/userland/ipc_sender.elf ::/boot
+	mcopy -i $(IMAGE_NAME).hdd@@1M kernel/userland/ipc_receiver.elf ::/boot
 ifeq ($(ARCH),x86_64)
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine-binary/limine-bios.sys ::/boot/limine
 	mcopy -i $(IMAGE_NAME).hdd@@1M limine-binary/BOOTX64.EFI ::/EFI/BOOT
