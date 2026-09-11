@@ -9,7 +9,7 @@ static volatile uint64_t g_ticks = 0;
 uint64_t timer_get_ticks(void) {
     return g_ticks;
 }
-
+/*
 void timer_tick_handler(void) {
     g_ticks++;
 
@@ -38,5 +38,35 @@ void timer_tick_handler(void) {
     current_task = next;
 
     //context_switch(prev, next);
+    scheduler_switch_to(prev, next);
+}*/
+
+
+void timer_tick_handler(void) {
+    g_ticks++;
+    pic_send_eoi(0);
+
+    if (g_ticks % TIME_SLICE_TICKS != 0) {
+        return;
+    }
+    if (current_task == NULL) {
+        return;
+    }
+
+    struct task *next = scheduler_pick_next(current_task);
+    if (next == current_task) {
+        return;
+    }
+
+    struct task *prev = current_task;
+
+    uint64_t f = task_table_lock_acquire();
+    if (prev->state == TASK_RUNNING) {
+        prev->state = TASK_RUNNABLE;
+    }
+    next->state = TASK_RUNNING;
+    current_task = next;
+    task_table_lock_release(f);
+
     scheduler_switch_to(prev, next);
 }

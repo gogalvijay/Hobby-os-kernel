@@ -6,6 +6,9 @@
 #include "hhdm.h"
 #include "memlayout.h"
 #include "kprintf.h"
+#include "spinlock.h"
+
+static spinlock_t kheap_lock;
 
 #define PGSIZE 4096
 #define ALIGN 16
@@ -82,7 +85,7 @@ static void split_block(struct block_header *b, size_t size) {
     }
 }
 
-void *kmalloc(size_t size) {
+/*void *kmalloc(size_t size) {
     if (size == 0) {
         return NULL;
     }
@@ -136,4 +139,69 @@ void kfree(void *ptr) {
         }
         cur = cur->next;
     }
+}*/
+
+
+
+void *kmalloc(size_t size) {
+    if (size == 0) {
+        return NULL;
+    }
+    size = roundup(size, ALIGN);
+
+    uint64_t f = spinlock_acquire(&kheap_lock);
+
+    struct block_header *b = find_free_block(size);
+    if (b != NULL) {
+        split_block(b, size);
+        b->free = 0;
+        spinlock_release(&kheap_lock, f);
+        return (void *)((uint8_t *)b + sizeof(struct block_header));
+    }
+
+    size_t needed = size + sizeof(struct block_header);
+    size_t npages = (needed + PGSIZE - 1) / PGSIZE;
+    uint64_t new_block_addr = heap_next;
+
+    if (!heap_extend(npages)) {
+        spinlock_release(&kheap_lock, f);
+        return NULL;
+    }
+
+    struct block_header *nb = (struct block_header *)new_block_addr;
+    nb->size = npages * PGSIZE - sizeof(struct block_header);
+    nb->free = 0;
+    nb->next = free_list;
+    free_list = nb;
+
+    split_block(nb, size);
+
+    spinlock_release(&kheap_lock, f);
+    return (void *)((uint8_t *)nb + sizeof(struct block_header));
+}
+
+void kfree(void *ptr) {
+    if (ptr == NULL) {
+        return;
+    }
+
+    uint64_t f = spinlock_acquire(&kheap_lock);
+
+    struct block_header *b = (struct block_header *)((uint8_t *)ptr - sizeof(struct block_header));
+    b->free = 1;
+
+    struct block_header *cur = free_list;
+    while (cur != NULL) {
+        if (cur->free && cur->next != NULL && cur->next->free) {
+            uint8_t *cur_end = (uint8_t *)cur + sizeof(struct block_header) + cur->size;
+            if (cur_end == (uint8_t *)cur->next) {
+                cur->size += sizeof(struct block_header) + cur->next->size;
+                cur->next = cur->next->next;
+                continue;
+            }
+        }
+        cur = cur->next;
+    }
+
+    spinlock_release(&kheap_lock, f);
 }

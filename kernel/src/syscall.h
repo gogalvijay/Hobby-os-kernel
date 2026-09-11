@@ -10,7 +10,7 @@
 #define SYS_FORK  2
 #define SYS_SEND  3
 #define SYS_RECV  4
-
+#define SYS_WAIT  5
 
 
 // Layout must exactly match the push order in syscall_entry.S.

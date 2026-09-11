@@ -7,18 +7,29 @@
 #include "kprintf.h"
 #include "scheduler.h"
 #include "usermode.h"
+#include "spinlock.h"
+#include "syscall.h"
+
+static spinlock_t task_table_lock;
 
 static struct task task_table[MAX_TASKS];
 static struct task *task_free_list;
 
 struct task *current_task = NULL;
 
+extern void syscall_entry_return(void);
+extern void task_entry_trampoline(void);
 
-#include "syscall.h"
+uint64_t task_table_lock_acquire(void) {
+    return spinlock_acquire(&task_table_lock);
+}
 
-extern void syscall_entry_return(void);   
+void task_table_lock_release(uint64_t flags) {
+    spinlock_release(&task_table_lock, flags);
+}
 
-void task_table_init(void) {
+/*void task_table_init(void) {
+    spinlock_init(&task_table_lock);
     task_free_list = NULL;
 
     for (int i = MAX_TASKS - 1; i >= 0; i--) {
@@ -29,27 +40,80 @@ void task_table_init(void) {
         task_table[i].context_rsp = 0;
         task_table[i].kstack = NULL;
         task_table[i].kstack_top = NULL;
+        task_table[i].block_reason = BLOCK_NONE;
+        task_table[i].ipc_peer = 0;
+        task_table[i].ipc_buf = 0;
+        task_table[i].ipc_len = 0;
+        task_table[i].parent_id = (uint64_t)-1;
+        task_table[i].exit_code = 0;
         task_free_list = &task_table[i];
     }
 
     kprintf("task_table_init: %d slots ready\n", MAX_TASKS);
+}*/
+
+
+void task_table_init(void) {
+    spinlock_init(&task_table_lock);
+    task_free_list = NULL;
+
+    task_table[0].task_id = 0;
+    task_table[0].pml4 = NULL;
+    task_table[0].state = TASK_UNUSED;
+    task_table[0].next_free = NULL;
+    task_table[0].context_rsp = 0;
+    task_table[0].kstack = NULL;
+    task_table[0].kstack_top = NULL;
+    task_table[0].block_reason = BLOCK_NONE;
+    task_table[0].ipc_peer = 0;
+    task_table[0].ipc_buf = 0;
+    task_table[0].ipc_len = 0;
+    task_table[0].parent_id = (uint64_t)-1;
+    task_table[0].exit_code = 0;
+
+    for (int i = MAX_TASKS - 1; i >= 1; i--) {
+        task_table[i].task_id = (uint64_t)i;
+        task_table[i].pml4 = NULL;
+        task_table[i].state = TASK_UNUSED;
+        task_table[i].next_free = task_free_list;
+        task_table[i].context_rsp = 0;
+        task_table[i].kstack = NULL;
+        task_table[i].kstack_top = NULL;
+        task_table[i].block_reason = BLOCK_NONE;
+        task_table[i].ipc_peer = 0;
+        task_table[i].ipc_buf = 0;
+        task_table[i].ipc_len = 0;
+        task_table[i].parent_id = (uint64_t)-1;
+        task_table[i].exit_code = 0;
+        task_free_list = &task_table[i];
+    }
+
+    kprintf("task_table_init: %d slots ready (slot 0 reserved, never allocated)\n", MAX_TASKS - 1);
 }
 
 static struct task *task_slot_alloc(void) {
+    uint64_t f = spinlock_acquire(&task_table_lock);
     if (task_free_list == NULL) {
+        spinlock_release(&task_table_lock, f);
         kprintf("task_slot_alloc: no free task slots\n");
         return NULL;
     }
     struct task *t = task_free_list;
     task_free_list = t->next_free;
     t->next_free = NULL;
+    spinlock_release(&task_table_lock, f);
     return t;
 }
 
 static void task_slot_free(struct task *t) {
+    uint64_t f = spinlock_acquire(&task_table_lock);
     t->state = TASK_UNUSED;
+    t->block_reason = BLOCK_NONE;
+    t->parent_id = (uint64_t)-1;
+    t->exit_code = 0;
     t->next_free = task_free_list;
     task_free_list = t;
+    spinlock_release(&task_table_lock, f);
 }
 
 static int task_kstack_alloc(struct task *t) {
@@ -85,6 +149,8 @@ struct task *task_create(void) {
     t->pml4 = pml4;
     t->state = TASK_RUNNABLE;
     t->context_rsp = 0;
+    t->parent_id = (uint64_t)-1;
+    t->exit_code = 0;
 
     kprintf("task_create: task_id=%ld pml4=%lx kstack_top=%lx state=RUNNABLE\n",
             (int64_t)t->task_id, (uint64_t)t->pml4, (uint64_t)t->kstack_top);
@@ -104,8 +170,10 @@ struct task *task_create_kernel(void (*entry)(void)) {
         return NULL;
     }
 
-    t->pml4 = get_current_pml4();  
+    t->pml4 = get_current_pml4();
     t->state = TASK_RUNNABLE;
+    t->parent_id = (uint64_t)-1;
+    t->exit_code = 0;
 
     task_stack_init(t, entry);
 
@@ -158,8 +226,6 @@ void task_dump(void) {
     }
 }
 
-extern void task_entry_trampoline(void);
-
 void task_stack_init(struct task *t, void (*entry)(void)) {
     uint64_t *sp = (uint64_t *)t->kstack_top;
 
@@ -170,7 +236,7 @@ void task_stack_init(struct task *t, void (*entry)(void)) {
     sp[0] = 0;                  // r15
     sp[1] = 0;                  // r14
     sp[2] = 0;                  // r13
-    sp[3] = (uint64_t)entry;    // r12 
+    sp[3] = (uint64_t)entry;    // r12
     sp[4] = 0;                  // rbp
     sp[5] = 0;                  // rbx
 
@@ -187,9 +253,6 @@ struct task *task_table_ptr(size_t index) {
 size_t task_table_size(void) {
     return MAX_TASKS;
 }
-
-
-
 
 struct task *task_fork(struct task *parent, struct syscall_regs *parent_regs) {
     struct task *child = task_slot_alloc();
@@ -209,6 +272,8 @@ struct task *task_fork(struct task *parent, struct syscall_regs *parent_regs) {
     }
 
     child->pml4 = child_pml4;
+    child->parent_id = parent->task_id;
+    child->exit_code = 0;
 
     uint8_t *frame_top = child->kstack_top - sizeof(struct syscall_regs);
     struct syscall_regs *child_regs = (struct syscall_regs *)frame_top;
@@ -230,52 +295,38 @@ struct task *task_fork(struct task *parent, struct syscall_regs *parent_regs) {
     child->context_rsp = (uint64_t)sp;
     child->state = TASK_RUNNABLE;
 
-    kprintf("task_fork: parent_id=%ld child_id=%ld\n",
-            (int64_t)parent->task_id, (int64_t)child->task_id);
-
+    //kprintf("task_fork: parent_id=%ld child_id=%ld\n",
+            //(int64_t)parent->task_id, (int64_t)child->task_id);
+    
+    kprintf("task_fork: parent_id=%ld child_id=%ld parent_rip=%lx parent_rsp=%lx\n",
+        (int64_t)parent->task_id, (int64_t)child->task_id,
+        parent_regs->rip, parent_regs->rsp);
     return child;
 }
+
 struct task *task_find_by_id(uint64_t task_id) {
+    uint64_t f = spinlock_acquire(&task_table_lock);
     for (size_t i = 0; i < task_table_size(); i++) {
         struct task *t = task_table_ptr(i);
         if (t != NULL && t->state != TASK_UNUSED && t->task_id == task_id) {
+            spinlock_release(&task_table_lock, f);
             return t;
         }
     }
+    spinlock_release(&task_table_lock, f);
     return NULL;
 }
-
-/*void task_block_and_switch(enum block_reason reason, uint64_t peer, uint64_t buf, uint64_t len) {
-    struct task *self = current_task;
-
-    self->state = TASK_BLOCKED;
-    self->block_reason = reason;
-    self->ipc_peer = peer;
-    self->ipc_buf = buf;
-    self->ipc_len = len;
-
-    struct task *next = scheduler_pick_next(self);
-
-    if (next == self) {
-        return;
-    }
-
-    current_task = next;
-    next->state = TASK_RUNNING;
-
-    context_switch(self, next);
-
-}*/
-
 
 void task_block_and_switch(enum block_reason reason, uint64_t peer, uint64_t buf, uint64_t len) {
     struct task *self = current_task;
 
+    uint64_t f = spinlock_acquire(&task_table_lock);
     self->state = TASK_BLOCKED;
     self->block_reason = reason;
     self->ipc_peer = peer;
     self->ipc_buf = buf;
     self->ipc_len = len;
+    spinlock_release(&task_table_lock, f);
 
     struct task *next = scheduler_pick_next(self);
 
@@ -283,18 +334,18 @@ void task_block_and_switch(enum block_reason reason, uint64_t peer, uint64_t buf
         return;
     }
 
+    f = spinlock_acquire(&task_table_lock);
     current_task = next;
     next->state = TASK_RUNNING;
+    spinlock_release(&task_table_lock, f);
 
-    scheduler_switch_to(self, next);   
+    scheduler_switch_to(self, next);
 }
 
 void task_wake(struct task *t) {
     t->state = TASK_RUNNABLE;
     t->block_reason = BLOCK_NONE;
 }
-
-
 
 void task_prepare_user_entry(struct task *t, uint64_t entry, uint64_t user_stack_top) {
     uint8_t *frame_top = t->kstack_top - sizeof(struct syscall_regs);
@@ -307,7 +358,7 @@ void task_prepare_user_entry(struct task *t, uint64_t entry, uint64_t user_stack
 
     regs->rip     = entry;
     regs->cs      = USER_CS;
-    regs->rflags  = 0x202;         
+    regs->rflags  = 0x202;
     regs->rsp     = user_stack_top;
     regs->user_ss = USER_DS;
 

@@ -212,6 +212,8 @@ void kmain(void) {
         }
     }
 
+    kprintf_lock_init();
+
     kprintf("hello\n");
     kprintf("str=%s char=%c\n", "test", 'A');
     kprintf("dec=%d hex=%x\n", 255, 255);
@@ -554,7 +556,7 @@ void kmain(void) {
 		}
 	}*/
 
-	{
+	/*{
 		kprintf("\n--- IPC test (day 50-51) ---\n");
 
 		pic_remap();
@@ -603,8 +605,53 @@ void kmain(void) {
 
 			kprintf("ERROR: should never reach this line\n");
 		}
-	}
+	}*/
 
+
+        {
+		kprintf("\n--- fork-tree wait test (day 55) ---\n");
+
+		struct task *t = task_create();
+		if (t == NULL) {
+			kprintf("wait test: task_create failed\n");
+		} else {
+			struct limine_file *mod = find_module("wait_test.elf");
+
+			if (mod == NULL) {
+				kprintf("wait_test.elf module not found (check limine.conf + build)\n");
+			} else {
+				uint64_t entry = 0;
+
+				if (!elf_load(t->pml4, mod->address, &entry)) {
+					kprintf("wait test: elf_load failed\n");
+				} else {
+					struct PageInfo *stack_pp = page_alloc(1);
+					uint64_t stack_phys = page2pa(stack_pp);
+					uint64_t stack_flags = (1ULL << 0) | (1ULL << 1) | (1ULL << 2);
+
+					vmm_map(t->pml4, USER_STACK_TOP - PGSIZE, stack_phys, stack_flags);
+
+					pic_remap();
+					lapic_enable();
+					pit_init(100);
+					pic_clear_mask(0);
+					scheduler_init();
+
+					task_prepare_user_entry(t, entry, USER_STACK_TOP);
+
+					current_task = t;
+
+					__asm__ volatile ("sti");
+
+					kprintf("wait test: entering ring 3, entry=%lx\n", entry);
+
+					scheduler_switch_to(NULL, t);
+
+					kprintf("ERROR: should never reach this line\n");
+				}
+			}
+		}
+	}
 	{
 		// day 31-36
 		page_table_t *original_pml4 = get_current_pml4();

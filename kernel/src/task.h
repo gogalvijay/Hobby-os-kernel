@@ -21,7 +21,8 @@ enum task_state {
 enum block_reason {
     BLOCK_NONE,
     BLOCK_ON_RECV,   
-    BLOCK_ON_SEND,   
+    BLOCK_ON_SEND,
+    BLOCK_ON_WAIT,   
 };
 
 #define IPC_ANY_SENDER 0xFFFFFFFFFFFFFFFFULL
@@ -42,7 +43,11 @@ struct task {
     uint64_t ipc_peer;     
                             
     uint64_t ipc_buf;       
-    uint64_t ipc_len;       
+    uint64_t ipc_len;
+
+
+    uint64_t parent_id;   
+    uint64_t exit_code;    
 };
 
 void task_table_init(void);
@@ -67,5 +72,9 @@ void task_wake(struct task *t);
 
 
 void task_prepare_user_entry(struct task *t, uint64_t entry, uint64_t user_stack_top);
+
+uint64_t task_table_lock_acquire(void);
+void task_table_lock_release(uint64_t flags);
+
 
 #endif

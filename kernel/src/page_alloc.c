@@ -5,6 +5,10 @@
 #include "physical_page_management.h"
 #include "hhdm.h"
 #include "kprintf.h"
+#include "spinlock.h"
+
+static spinlock_t page_alloc_lock;
+
 
 #define PGSIZE 4096
 #define ALLOC_ZERO 1
@@ -90,7 +94,7 @@ void frame_alloc_init(struct limine_memmap_response *memmap) {
 }
 
 
-struct PageInfo *page_alloc(int flags) {
+/*struct PageInfo *page_alloc(int flags) {
     if (page_free_list == NULL) {
         return NULL;
     }
@@ -107,16 +111,16 @@ struct PageInfo *page_alloc(int flags) {
     }
 
     return pp;
-}
+}*/
 
-void page_free(struct PageInfo *pp) {
+/*void page_free(struct PageInfo *pp) {
     if (pp->pp_ref != 0 || pp->pp_link != NULL) {
         kprintf("page_free: bad free ref=%d\n", pp->pp_ref);
         return;
     }
     pp->pp_link = page_free_list;
     page_free_list = pp;
-}
+}*/
 
 uint64_t page2pa(struct PageInfo *pp) {
     return (uint64_t)(pp - pages) * PGSIZE;
@@ -126,12 +130,62 @@ struct PageInfo *pa2page(uint64_t pa) {
     return &pages[pa / PGSIZE];
 }
 
-size_t count_free(void) {
+/*size_t count_free(void) {
     size_t count = 0;
     for (struct PageInfo *p = page_free_list; p != NULL; p = p->pp_link) {
         count++;
     }
     return count;
+}*/
+
+
+
+
+struct PageInfo *page_alloc(int flags) {
+    uint64_t f = spinlock_acquire(&page_alloc_lock);
+
+    if (page_free_list == NULL) {
+        spinlock_release(&page_alloc_lock, f);
+        return NULL;
+    }
+
+    struct PageInfo *pp = page_free_list;
+    page_free_list = pp->pp_link;
+    pp->pp_link = NULL;
+
+    spinlock_release(&page_alloc_lock, f);
+
+    if (flags & ALLOC_ZERO) {
+        uint8_t *va = (uint8_t *)phys_to_virt(page2pa(pp));
+        for (int i = 0; i < PGSIZE; i++) {
+            va[i] = 0;
+        }
+    }
+
+    return pp;
 }
 
+void page_free(struct PageInfo *pp) {
+    uint64_t f = spinlock_acquire(&page_alloc_lock);
+
+    if (pp->pp_ref != 0 || pp->pp_link != NULL) {
+        spinlock_release(&page_alloc_lock, f);
+        kprintf("page_free: bad free ref=%d\n", pp->pp_ref);
+        return;
+    }
+    pp->pp_link = page_free_list;
+    page_free_list = pp;
+
+    spinlock_release(&page_alloc_lock, f);
+}
+
+size_t count_free(void) {
+    uint64_t f = spinlock_acquire(&page_alloc_lock);
+    size_t count = 0;
+    for (struct PageInfo *p = page_free_list; p != NULL; p = p->pp_link) {
+        count++;
+    }
+    spinlock_release(&page_alloc_lock, f);
+    return count;
+}
 

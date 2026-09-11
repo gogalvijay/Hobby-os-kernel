@@ -41,7 +41,7 @@ void scheduler_init(void) {
     idle_task = NULL;
 }
 
-struct task *scheduler_pick_next(struct task *current) {
+/*struct task *scheduler_pick_next(struct task *current) {
     size_t n = task_table_size();
     if (n == 0) {
         return current;
@@ -70,4 +70,42 @@ struct task *scheduler_pick_next(struct task *current) {
     }
 
     return current;
+}*/
+
+
+struct task *scheduler_pick_next(struct task *current) {
+    size_t n = task_table_size();
+    if (n == 0) {
+        return current;
+    }
+
+    uint64_t f = task_table_lock_acquire();
+
+    size_t start = (current != NULL) ? index_of(current) : 0;
+    struct task *found = NULL;
+
+    for (size_t offset = 1; offset <= n; offset++) {
+        size_t idx = (start + offset) % n;
+        struct task *t = task_table_ptr(idx);
+        if (t == NULL) {
+            continue;
+        }
+        if (t->state == TASK_RUNNABLE) {
+            found = t;
+            break;
+        }
+    }
+
+    if (found == NULL) {
+        if (current != NULL && current->state == TASK_RUNNABLE) {
+            found = current;
+        } else if (idle_task != NULL) {
+            found = idle_task;
+        } else {
+            found = current;
+        }
+    }
+
+    task_table_lock_release(f);
+    return found;
 }

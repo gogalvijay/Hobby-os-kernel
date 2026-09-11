@@ -1,7 +1,20 @@
+#include "spinlock.h"
+
 #include <stdint.h>
 #include <stdarg.h>
 #include "serial.h"
 #include "kprintf.h"
+
+
+static spinlock_t kprintf_lock;
+static int kprintf_lock_ready = 0;
+
+void kprintf_lock_init(void) {
+    spinlock_init(&kprintf_lock);
+    kprintf_lock_ready = 1;
+}
+
+
 
 static char *uint_to_str(uint64_t value, unsigned base, char *buf, int buf_size) {
     static const char digits[] = "0123456789abcdef";
@@ -46,6 +59,11 @@ static void kprintf_puthex(uint64_t value) {
 
 
 void kprintf(const char *fmt, ...) {
+    uint64_t f = 0;
+    if (kprintf_lock_ready) {
+        f = spinlock_acquire(&kprintf_lock);
+    }
+
     va_list args;
     va_start(args, fmt);
 
@@ -102,4 +120,8 @@ void kprintf(const char *fmt, ...) {
 
 done:
     va_end(args);
+
+    if (kprintf_lock_ready) {
+        spinlock_release(&kprintf_lock, f);
+    }
 }
